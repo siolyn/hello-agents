@@ -1,6 +1,7 @@
 from agent.parser import (
     extract_action,
     extract_finish_answer,
+    extract_thought,
     parse_tool_call,
     truncate_thought_action,
 )
@@ -8,6 +9,17 @@ from clients.openai_compatible import OpenAICompatibleClient
 from config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL_ID
 from prompts.system_prompt import AGENT_SYSTEM_PROMPT
 from tools import available_tools
+
+
+def print_block(title: str, content: str) -> None:
+    print(title)
+    for line in content.strip().splitlines():
+        print(f"  {line}")
+    print()
+
+
+def print_step_header(step: int) -> None:
+    print(f"步骤 {step}")
 
 
 def run_agent(
@@ -21,18 +33,23 @@ def run_agent(
     )
 
     prompt_history = [f"用户请求: {user_prompt}"]
-    print(f"用户输入: {user_prompt}\n" + "=" * 40)
+    print()
+    print_block("你的请求", user_prompt)
 
     for i in range(max_steps):
-        print(f"--- 循环 {i + 1} ---\n")
+        step = i + 1
+        print_step_header(step)
 
         full_prompt = "\n".join(prompt_history)
         llm_output = llm.generate(full_prompt, system_prompt=AGENT_SYSTEM_PROMPT)
         llm_output, was_truncated = truncate_thought_action(llm_output)
         if was_truncated:
-            print("已截断多余的 Thought-Action 对。")
+            print_block("提示", "已截断多余的 Thought-Action 对。")
 
-        print(f"模型输出:\n{llm_output}\n")
+        thought_str = extract_thought(llm_output)
+        if thought_str:
+            print_block("思考", thought_str)
+
         prompt_history.append(llm_output)
 
         action_str = extract_action(llm_output)
@@ -42,20 +59,22 @@ def run_agent(
                 "请确保回复严格遵循 'Thought: ... Action: ...' 的格式。"
             )
             observation_str = f"Observation: {observation}"
-            print(f"{observation_str}\n" + "=" * 40)
+            print_block("异常", observation)
             prompt_history.append(observation_str)
             continue
+
+        print_block("执行", action_str)
 
         if action_str.startswith("Finish"):
             final_answer = extract_finish_answer(action_str)
             if final_answer is None:
                 observation = "错误：Finish 格式不正确，应为 Finish[最终答案]。"
                 observation_str = f"Observation: {observation}"
-                print(f"{observation_str}\n" + "=" * 40)
+                print_block("异常", observation)
                 prompt_history.append(observation_str)
                 continue
 
-            print(f"任务完成，最终答案: {final_answer}")
+            print_block("最终答案", final_answer)
             return final_answer
 
         tool_name, kwargs = parse_tool_call(action_str)
@@ -67,8 +86,8 @@ def run_agent(
             observation = f"错误:未定义的工具 '{tool_name}'"
 
         observation_str = f"Observation: {observation}"
-        print(f"{observation_str}\n" + "=" * 40)
+        print_block("结果", observation)
         prompt_history.append(observation_str)
 
-    print("任务结束：已达到最大循环次数。")
+    print_block("结束", "已达到最大循环次数，任务未完成。")
     return None

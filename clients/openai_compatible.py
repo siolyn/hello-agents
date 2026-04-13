@@ -12,7 +12,6 @@ class OpenAICompatibleClient:
 
     def generate(self, prompt: str, system_prompt: str) -> str:
         """调用 LLM API 来生成回应。"""
-        print("正在调用大语言模型...\n")
         try:
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -32,7 +31,6 @@ class OpenAICompatibleClient:
                     parts.append(delta.content)
 
             answer = "".join(parts)
-            print("大语言模型响应成功。\n")
             return answer or ""
         except Exception as e:
             print(f"调用 LLM API 时发生错误: {e}")

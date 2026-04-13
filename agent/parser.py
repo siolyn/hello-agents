@@ -5,6 +5,7 @@ THOUGHT_ACTION_PATTERN = re.compile(
     r"(Thought:.*?Action:.*?)(?=(?:\s*Thought:|\s*Action:|\s*Observation:)|\Z)",
     re.DOTALL,
 )
+THOUGHT_PATTERN = re.compile(r"Thought:\s*(.*?)\s*Action:", re.DOTALL)
 ACTION_PATTERN = re.compile(r"Action:\s*(.*)", re.DOTALL)
 TOOL_NAME_PATTERN = re.compile(r"(\w+)\(")
 ARGS_PATTERN = re.compile(r"\((.*)\)")
@@ -23,6 +24,13 @@ def truncate_thought_action(llm_output: str) -> tuple[str, bool]:
 
 def extract_action(llm_output: str) -> str | None:
     match = ACTION_PATTERN.search(llm_output)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def extract_thought(llm_output: str) -> str | None:
+    match = THOUGHT_PATTERN.search(llm_output)
     if not match:
         return None
     return match.group(1).strip()

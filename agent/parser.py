@@ -1,56 +1,119 @@
-import re
+import json
 
 
-THOUGHT_ACTION_PATTERN = re.compile(
-    r"(Thought:.*?Action:.*?)(?=(?:\s*Thought:|\s*Action:|\s*Observation:)|\Z)",
-    re.DOTALL,
-)
-THOUGHT_PATTERN = re.compile(r"Thought:\s*(.*?)\s*Action:", re.DOTALL)
-ACTION_PATTERN = re.compile(r"Action:\s*(.*)", re.DOTALL)
-TOOL_NAME_PATTERN = re.compile(r"(\w+)\(")
-ARGS_PATTERN = re.compile(r"\((.*)\)")
-KWARGS_PATTERN = re.compile(r'(\w+)="([^"]*)"')
-FINISH_PATTERN = re.compile(r"Finish\[(.*)\]", re.DOTALL)
+def strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    if len(lines) >= 2 and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]).strip()
+    return stripped
 
 
-def truncate_thought_action(llm_output: str) -> tuple[str, bool]:
-    match = THOUGHT_ACTION_PATTERN.search(llm_output)
-    if not match:
-        return llm_output.strip(), False
+def extract_json_object(text: str) -> str:
+    stripped = strip_code_fence(text)
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return stripped
 
-    truncated = match.group(1).strip()
-    return truncated, truncated != llm_output.strip()
+    start = stripped.find("{")
+    if start == -1:
+        raise ValueError("未找到 JSON 对象起始位置。")
+
+    depth = 0
+    in_string = False
+    escaped = False
+
+    # 有些模型会在 JSON 前后夹带少量文本，这里按括号层级截出第一个完整对象。
+    for index in range(start, len(stripped)):
+        char = stripped[index]
+
+        if escaped:
+            escaped = False
+            continue
+
+        if char == "\\":
+            escaped = True
+            continue
+
+        if char == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return stripped[start : index + 1]
+
+    raise ValueError("未找到完整的 JSON 对象。")
 
 
-def extract_action(llm_output: str) -> str | None:
-    match = ACTION_PATTERN.search(llm_output)
-    if not match:
-        return None
-    return match.group(1).strip()
+def parse_llm_output(llm_output: str) -> tuple[dict, bool]:
+    json_text = extract_json_object(llm_output)
+    parsed = json.loads(json_text)
+    if not isinstance(parsed, dict):
+        raise ValueError("模型返回的 JSON 顶层必须是对象。")
+    # 第二个返回值用来提示“模型有额外文本，但已自动清理”。
+    return parsed, json_text != llm_output.strip()
 
 
-def extract_thought(llm_output: str) -> str | None:
-    match = THOUGHT_PATTERN.search(llm_output)
-    if not match:
-        return None
-    return match.group(1).strip()
+def extract_thought(payload: dict) -> str:
+    thought = payload.get("thought")
+    if not isinstance(thought, str) or not thought.strip():
+        raise ValueError("缺少 thought 字段，或其值不是有效字符串。")
+    return thought.strip()
 
 
-def extract_finish_answer(action_str: str) -> str | None:
-    match = FINISH_PATTERN.fullmatch(action_str)
-    if not match:
-        return None
-    return match.group(1)
+def extract_action(payload: dict) -> dict:
+    action = payload.get("action")
+    if not isinstance(action, dict):
+        raise ValueError("缺少 action 字段，或其值不是对象。")
+    return action
 
 
-def parse_tool_call(action_str: str) -> tuple[str | None, dict[str, str]]:
-    tool_name_match = TOOL_NAME_PATTERN.search(action_str)
-    args_match = ARGS_PATTERN.search(action_str)
+def get_action_type(action: dict) -> str:
+    action_type = action.get("type")
+    if not isinstance(action_type, str) or not action_type.strip():
+        raise ValueError("action.type 缺失或无效。")
+    return action_type.strip()
 
-    if not tool_name_match or not args_match:
-        return None, {}
 
-    tool_name = tool_name_match.group(1)
-    args_str = args_match.group(1)
-    kwargs = dict(KWARGS_PATTERN.findall(args_str))
-    return tool_name, kwargs
+def get_finish_answer(action: dict) -> str:
+    answer = action.get("answer")
+    if not isinstance(answer, str) or not answer.strip():
+        raise ValueError("action.answer 缺失或无效。")
+    return answer.strip()
+
+
+def get_tool_name(action: dict) -> str:
+    name = action.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("action.name 缺失或无效。")
+    return name.strip()
+
+
+def get_tool_args(action: dict) -> dict[str, str]:
+    args = action.get("args", {})
+    if not isinstance(args, dict):
+        raise ValueError("action.args 必须是对象。")
+
+    normalized_args: dict[str, str] = {}
+    for key, value in args.items():
+        if not isinstance(key, str):
+            raise ValueError("action.args 的键必须是字符串。")
+        normalized_args[key] = str(value)
+    return normalized_args
+
+
+def format_tool_call(tool_name: str, kwargs: dict[str, str]) -> str:
+    if not kwargs:
+        return f"{tool_name}()"
+
+    parts = [f'{key}="{value}"' for key, value in kwargs.items()]
+    return f"{tool_name}({', '.join(parts)})"

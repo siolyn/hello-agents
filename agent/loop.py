@@ -1,9 +1,12 @@
 from agent.parser import (
     extract_action,
-    extract_finish_answer,
     extract_thought,
-    parse_tool_call,
-    truncate_thought_action,
+    format_tool_call,
+    get_action_type,
+    get_finish_answer,
+    get_tool_args,
+    get_tool_name,
+    parse_llm_output,
 )
 from clients.openai_compatible import OpenAICompatibleClient
 from config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL_ID
@@ -32,6 +35,7 @@ def run_agent(
         base_url=OPENAI_BASE_URL,
     )
 
+    # prompt_history 记录“用户请求 -> 模型决策 -> 工具观察”，多轮推理都靠它续上上下文。
     prompt_history = [f"用户请求: {user_prompt}"]
     print()
     print_block("你的请求", user_prompt)
@@ -42,49 +46,65 @@ def run_agent(
 
         full_prompt = "\n".join(prompt_history)
         llm_output = llm.generate(full_prompt, system_prompt=AGENT_SYSTEM_PROMPT)
-        llm_output, was_truncated = truncate_thought_action(llm_output)
-        if was_truncated:
-            print_block("提示", "已截断多余的 Thought-Action 对。")
 
-        thought_str = extract_thought(llm_output)
-        if thought_str:
+        try:
+            payload, was_trimmed = parse_llm_output(llm_output)
+            if was_trimmed:
+                print_block("提示", "已自动提取模型返回中的 JSON 主体。")
+
+            thought_str = extract_thought(payload)
             print_block("思考", thought_str)
 
-        prompt_history.append(llm_output)
-
-        action_str = extract_action(llm_output)
-        if not action_str:
-            observation = (
-                "错误：未能解析到 Action 字段。"
-                "请确保回复严格遵循 'Thought: ... Action: ...' 的格式。"
-            )
+            action = extract_action(payload)
+            action_type = get_action_type(action)
+            # 原始模型输出也要回灌给下一轮，否则模型会丢失自己上一轮的决策。
+            prompt_history.append(llm_output)
+        except (ValueError, TypeError) as e:
+            observation = f"错误：模型返回的 JSON 无法解析 - {e}"
             observation_str = f"Observation: {observation}"
             print_block("异常", observation)
             prompt_history.append(observation_str)
             continue
 
-        print_block("执行", action_str)
-
-        if action_str.startswith("Finish"):
-            final_answer = extract_finish_answer(action_str)
-            if final_answer is None:
-                observation = "错误：Finish 格式不正确，应为 Finish[最终答案]。"
+        if action_type == "finish":
+            try:
+                final_answer = get_finish_answer(action)
+            except ValueError as e:
+                observation = f"错误：最终答案格式不正确 - {e}"
                 observation_str = f"Observation: {observation}"
                 print_block("异常", observation)
                 prompt_history.append(observation_str)
                 continue
 
+            print_block("执行", 'action.type = "finish"')
             print_block("最终答案", final_answer)
             return final_answer
 
-        tool_name, kwargs = parse_tool_call(action_str)
-        if not tool_name:
-            observation = f"错误:无法解析工具调用 '{action_str}'"
-        elif tool_name in available_tools:
+        if action_type != "tool":
+            observation = f'错误：不支持的 action.type "{action_type}"'
+            observation_str = f"Observation: {observation}"
+            print_block("异常", observation)
+            prompt_history.append(observation_str)
+            continue
+
+        try:
+            tool_name = get_tool_name(action)
+            kwargs = get_tool_args(action)
+            action_display = format_tool_call(tool_name, kwargs)
+            print_block("执行", action_display)
+        except ValueError as e:
+            observation = f"错误：工具调用格式不正确 - {e}"
+            observation_str = f"Observation: {observation}"
+            print_block("异常", observation)
+            prompt_history.append(observation_str)
+            continue
+
+        if tool_name in available_tools:
             observation = available_tools[tool_name](**kwargs)
         else:
             observation = f"错误:未定义的工具 '{tool_name}'"
 
+        # 工具执行结果同样作为 Observation 放回上下文，供下一轮继续判断。
         observation_str = f"Observation: {observation}"
         print_block("结果", observation)
         prompt_history.append(observation_str)

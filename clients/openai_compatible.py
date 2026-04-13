@@ -17,6 +17,7 @@ class OpenAICompatibleClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ]
+            # 当前这套代理在非流式模式下会返回空 content，所以这里改为流式拼接正文。
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,

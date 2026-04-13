@@ -1,6 +1,5 @@
 from openai import OpenAI
 
-
 class OpenAICompatibleClient:
     """
     一个用于调用任何兼容 OpenAI 接口的 LLM 服务的客户端。

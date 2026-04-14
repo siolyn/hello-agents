@@ -22,4 +22,4 @@ There is a `tests/` package but very little coverage today, so new behavior shou
 Recent history uses short Conventional Commit style prefixes such as `feat: 美化了日志` and `feat: 新增自定义提需求功能`. Keep that pattern: `feat:`, `fix:`, `refactor:`, `docs:`. PRs should explain what changed, why it changed, and how you verified it. Include a sample CLI interaction or terminal output when behavior or logs change.
 
 ## Security & Configuration Tips
-`config.py` requires `.env` values for `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL_ID`, and `TAVILY_API_KEY`. Never commit real secrets. If you change config loading or third-party integrations, document the required variables and test with a real prompt through `python main.py`.
+`config.py` requires `.env` values for `OPENAI_API_KEY`, `OPENAI_MODEL_ID`, and `TAVILY_API_KEY`. `OPENAI_BASE_URL` is optional and only needed when connecting to a non-default compatible endpoint. Never commit real secrets. If you change config loading or third-party integrations, document the required variables and test with a real prompt through `python main.py`.

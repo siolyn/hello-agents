@@ -8,7 +8,7 @@ from agent.parser import (
     get_tool_name,
     parse_llm_output,
 )
-from clients.openai_compatible import OpenAICompatibleClient
+from clients.openai_client import OpenAIClient
 from config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL_ID
 from prompts.system_prompt import AGENT_SYSTEM_PROMPT
 from tools import available_tools
@@ -29,7 +29,7 @@ def run_agent(
     user_prompt: str = "你好，请帮我查询一下今天北京的天气，然后根据天气推荐一个合适的旅游景点。",
     max_steps: int = 5,
 ) -> str | None:
-    llm = OpenAICompatibleClient(
+    llm = OpenAIClient(
         model=OPENAI_MODEL_ID,
         api_key=OPENAI_API_KEY,
         base_url=OPENAI_BASE_URL,

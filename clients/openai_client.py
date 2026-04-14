@@ -1,13 +1,17 @@
 from openai import OpenAI
 
-class OpenAICompatibleClient:
+
+class OpenAIClient:
     """
-    一个用于调用任何兼容 OpenAI 接口的 LLM 服务的客户端。
+    一个用于调用 OpenAI API 的客户端。
     """
 
-    def __init__(self, model: str, api_key: str, base_url: str):
+    def __init__(self, model: str, api_key: str, base_url: str | None = None):
         self.model = model
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        self.client = OpenAI(**client_kwargs)
 
     def generate(self, prompt: str, system_prompt: str) -> str:
         """调用 LLM API 来生成回应。"""
@@ -16,7 +20,6 @@ class OpenAICompatibleClient:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ]
-            # 当前这套代理在非流式模式下会返回空 content，所以这里改为流式拼接正文。
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,

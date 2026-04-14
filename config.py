@@ -33,6 +33,6 @@ def get_env(name: str, default: str = "", required: bool = True) -> str:
 
 
 OPENAI_API_KEY = get_env("OPENAI_API_KEY")
-OPENAI_BASE_URL = get_env("OPENAI_BASE_URL")
+OPENAI_BASE_URL: str | None = get_env("OPENAI_BASE_URL", required=False) or None
 OPENAI_MODEL_ID = get_env("OPENAI_MODEL_ID")
 TAVILY_API_KEY = get_env("TAVILY_API_KEY")

@@ -9,7 +9,6 @@ from agent.parser import (
     parse_llm_output,
 )
 from clients.openai_client import OpenAIClient
-from config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL_ID
 from prompts.system_prompt import AGENT_SYSTEM_PROMPT
 from tools import available_tools
 
@@ -29,11 +28,7 @@ def run_agent(
     user_prompt: str = "你好，请帮我查询一下今天北京的天气，然后根据天气推荐一个合适的旅游景点。",
     max_steps: int = 5,
 ) -> str | None:
-    llm = OpenAIClient(
-        model=OPENAI_MODEL_ID,
-        api_key=OPENAI_API_KEY,
-        base_url=OPENAI_BASE_URL,
-    )
+    llm = OpenAIClient()
 
     # prompt_history 记录“用户请求 -> 模型决策 -> 工具观察”，多轮推理都靠它续上上下文。
     prompt_history = [f"用户请求: {user_prompt}"]
@@ -47,17 +42,18 @@ def run_agent(
         full_prompt = "\n".join(prompt_history)
         llm_output = llm.generate(full_prompt, system_prompt=AGENT_SYSTEM_PROMPT)
 
+        # 解析 LLM 输出，获取 Though 和 Action
         try:
-            payload, was_trimmed = parse_llm_output(llm_output)
-            if was_trimmed:
-                print_block("提示", "已自动提取模型返回中的 JSON 主体。")
-
+            # 获取输出的 JSON 对象
+            payload = parse_llm_output(llm_output)
+            # 获取 Thought
             thought_str = extract_thought(payload)
             print_block("思考", thought_str)
 
+            # 获取 Action
             action = extract_action(payload)
             action_type = get_action_type(action)
-            # 原始模型输出也要回灌给下一轮，否则模型会丢失自己上一轮的决策。
+            # 原始模型输出也要回灌给下一轮，否则模型会丢失自己上一轮的决策
             prompt_history.append(llm_output)
         except (ValueError, TypeError) as e:
             observation = f"错误：模型返回的 JSON 无法解析 - {e}"
@@ -66,6 +62,7 @@ def run_agent(
             prompt_history.append(observation_str)
             continue
 
+        # 循环结束
         if action_type == "finish":
             try:
                 final_answer = get_finish_answer(action)
@@ -80,6 +77,7 @@ def run_agent(
             print_block("最终答案", final_answer)
             return final_answer
 
+        # Action 类型错误，当前不支持
         if action_type != "tool":
             observation = f'错误：不支持的 action.type "{action_type}"'
             observation_str = f"Observation: {observation}"

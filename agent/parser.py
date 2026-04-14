@@ -1,69 +1,15 @@
 import json
 
-
-def strip_code_fence(text: str) -> str:
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-
-    lines = stripped.splitlines()
-    if len(lines) >= 2 and lines[-1].strip() == "```":
-        return "\n".join(lines[1:-1]).strip()
-    return stripped
-
-
-def extract_json_object(text: str) -> str:
-    stripped = strip_code_fence(text)
-    if stripped.startswith("{") and stripped.endswith("}"):
-        return stripped
-
-    start = stripped.find("{")
-    if start == -1:
-        raise ValueError("未找到 JSON 对象起始位置。")
-
-    depth = 0
-    in_string = False
-    escaped = False
-
-    # 有些模型会在 JSON 前后夹带少量文本，这里按括号层级截出第一个完整对象。
-    for index in range(start, len(stripped)):
-        char = stripped[index]
-
-        if escaped:
-            escaped = False
-            continue
-
-        if char == "\\":
-            escaped = True
-            continue
-
-        if char == '"':
-            in_string = not in_string
-            continue
-
-        if in_string:
-            continue
-
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return stripped[start : index + 1]
-
-    raise ValueError("未找到完整的 JSON 对象。")
-
-
-def parse_llm_output(llm_output: str) -> tuple[dict, bool]:
-    json_text = extract_json_object(llm_output)
-    parsed = json.loads(json_text)
+def parse_llm_output(llm_output: str) -> dict:
+    """将 LLM 的输出转换成 JSON 对象"""
+    parsed = json.loads(llm_output)
     if not isinstance(parsed, dict):
         raise ValueError("模型返回的 JSON 顶层必须是对象。")
-    # 第二个返回值用来提示“模型有额外文本，但已自动清理”。
-    return parsed, json_text != llm_output.strip()
+    return parsed
 
 
 def extract_thought(payload: dict) -> str:
+    """获取 Thought"""
     thought = payload.get("thought")
     if not isinstance(thought, str) or not thought.strip():
         raise ValueError("缺少 thought 字段，或其值不是有效字符串。")
@@ -71,6 +17,7 @@ def extract_thought(payload: dict) -> str:
 
 
 def extract_action(payload: dict) -> dict:
+    """获取 Action"""
     action = payload.get("action")
     if not isinstance(action, dict):
         raise ValueError("缺少 action 字段，或其值不是对象。")
